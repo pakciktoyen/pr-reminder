@@ -1,4 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 const API =
   import.meta.env.VITE_API_URL ||
@@ -36,34 +41,57 @@ export default function Siswa({ user, onLogout }) {
   const [selectedTask, setSelectedTask] = useState(null);
   const [showFeedback, setShowFeedback] = useState(false);
 
-  const token = localStorage.getItem("prReminderToken");
+  const [pullDistance, setPullDistance] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const touchStartY = useRef(0);
+  const pulling = useRef(false);
+  const pullDistanceRef = useRef(0);
+
+  const token = localStorage.getItem(
+    "prReminderToken"
+  );
 
   async function loadTasks() {
     try {
       setLoading(true);
 
-      const response = await fetch(`${API}/api/tasks`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
+      const response = await fetch(
+        `${API}/api/tasks`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
 
       const data = await response.json();
 
-      if (response.status === 401 || response.status === 403) {
+      if (
+        response.status === 401 ||
+        response.status === 403
+      ) {
         onLogout();
         return;
       }
 
       if (!response.ok) {
         throw new Error(
-          data.message || "Gagal mengambil tugas."
+          data.message ||
+            "Gagal mengambil tugas."
         );
       }
 
-      setTasks(Array.isArray(data.tasks) ? data.tasks : []);
+      setTasks(
+        Array.isArray(data.tasks)
+          ? data.tasks
+          : []
+      );
     } catch (error) {
-      console.error("LOAD TASKS:", error);
+      console.error(
+        "LOAD TASKS:",
+        error
+      );
     } finally {
       setLoading(false);
     }
@@ -73,6 +101,94 @@ export default function Siswa({ user, onLogout }) {
     loadTasks();
   }, []);
 
+  function handleTouchStart(event) {
+    if (
+      window.scrollY !== 0 ||
+      refreshing
+    ) {
+      pulling.current = false;
+      return;
+    }
+
+    touchStartY.current =
+      event.touches[0].clientY;
+
+    pulling.current = true;
+    pullDistanceRef.current = 0;
+  }
+
+  function handleTouchMove(event) {
+    if (
+      !pulling.current ||
+      refreshing
+    ) {
+      return;
+    }
+
+    if (window.scrollY !== 0) {
+      pulling.current = false;
+      pullDistanceRef.current = 0;
+      setPullDistance(0);
+      return;
+    }
+
+    const currentY =
+      event.touches[0].clientY;
+
+    const distance =
+      currentY - touchStartY.current;
+
+    if (distance <= 0) {
+      pullDistanceRef.current = 0;
+      setPullDistance(0);
+      return;
+    }
+
+    const limitedDistance = Math.min(
+      distance * 0.5,
+      110
+    );
+
+    pullDistanceRef.current =
+      limitedDistance;
+
+    setPullDistance(
+      limitedDistance
+    );
+  }
+
+  async function handleTouchEnd() {
+    if (
+      !pulling.current ||
+      refreshing
+    ) {
+      return;
+    }
+
+    pulling.current = false;
+
+    const currentDistance =
+      pullDistanceRef.current;
+
+    if (currentDistance >= 65) {
+      setPullDistance(65);
+      setRefreshing(true);
+
+      try {
+        await loadTasks();
+      } finally {
+        setRefreshing(false);
+        pullDistanceRef.current = 0;
+        setPullDistance(0);
+      }
+
+      return;
+    }
+
+    pullDistanceRef.current = 0;
+    setPullDistance(0);
+  }
+
   async function toggleComplete(task) {
     try {
       const response = await fetch(
@@ -80,18 +196,24 @@ export default function Siswa({ user, onLogout }) {
         {
           method: "PUT",
           headers: {
-            "Content-Type": "application/json",
+            "Content-Type":
+              "application/json",
             Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({
-            completed: !task.completedByMe,
+            completed:
+              !task.completedByMe,
           }),
         }
       );
 
-      const data = await response.json();
+      const data =
+        await response.json();
 
-      if (response.status === 401 || response.status === 403) {
+      if (
+        response.status === 401 ||
+        response.status === 403
+      ) {
         onLogout();
         return;
       }
@@ -105,7 +227,10 @@ export default function Siswa({ user, onLogout }) {
 
       await loadTasks();
     } catch (error) {
-      console.error("TOGGLE TASK:", error);
+      console.error(
+        "TOGGLE TASK:",
+        error
+      );
     }
   }
 
@@ -118,10 +243,55 @@ export default function Siswa({ user, onLogout }) {
   );
 
   return (
-    <div style={styles.app}>
+    <div
+      style={styles.app}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+    >
+      {(pullDistance > 0 ||
+        refreshing) && (
+        <div
+          style={{
+            ...styles.pullRefresh,
+            transform: `translate(-50%, ${Math.min(
+              pullDistance,
+              70
+            )}px)`,
+            opacity: refreshing
+              ? 1
+              : Math.min(
+                  pullDistance / 65,
+                  1
+                ),
+          }}
+        >
+          <span
+            style={{
+              ...styles.pullRefreshIcon,
+              animation: refreshing
+                ? "prRefreshSpin .8s linear infinite"
+                : "none",
+            }}
+          >
+            {refreshing ? "↻" : "↓"}
+          </span>
+
+          <span>
+            {refreshing
+              ? "Memperbarui..."
+              : pullDistance >= 65
+              ? "Lepaskan untuk refresh"
+              : "Tarik untuk refresh"}
+          </span>
+        </div>
+      )}
+
       <header style={styles.topbar}>
         <div style={styles.brand}>
-          <div style={styles.brandIcon}>PR</div>
+          <div style={styles.brandIcon}>
+            PR
+          </div>
 
           <div>
             <div style={styles.brandName}>
@@ -203,28 +373,36 @@ export default function Siswa({ user, onLogout }) {
           active={page === "home"}
           label="Beranda"
           icon="H"
-          onClick={() => setPage("home")}
+          onClick={() =>
+            setPage("home")
+          }
         />
 
         <NavButton
           active={page === "tasks"}
           label="Tugas"
           icon="T"
-          onClick={() => setPage("tasks")}
+          onClick={() =>
+            setPage("tasks")
+          }
         />
 
         <NavButton
           active={page === "calendar"}
           label="Kalender"
           icon="K"
-          onClick={() => setPage("calendar")}
+          onClick={() =>
+            setPage("calendar")
+          }
         />
 
         <NavButton
           active={page === "profile"}
           label="Profil"
           icon="P"
-          onClick={() => setPage("profile")}
+          onClick={() =>
+            setPage("profile")
+          }
         />
 
         <div style={styles.watermark}>
@@ -235,18 +413,37 @@ export default function Siswa({ user, onLogout }) {
       {selectedTask && (
         <TaskModal
           task={selectedTask}
-          close={() => setSelectedTask(null)}
+          close={() =>
+            setSelectedTask(null)
+          }
           complete={() =>
-            toggleComplete(selectedTask)
+            toggleComplete(
+              selectedTask
+            )
           }
         />
       )}
 
       {showFeedback && (
         <FeedbackModal
-          close={() => setShowFeedback(false)}
+          close={() =>
+            setShowFeedback(false)
+          }
         />
       )}
+
+      <style>
+        {`
+          @keyframes prRefreshSpin {
+            from {
+              transform: rotate(0deg);
+            }
+            to {
+              transform: rotate(360deg);
+            }
+          }
+        `}
+      </style>
     </div>
   );
 }
@@ -290,8 +487,8 @@ function HomePage({
           </h1>
 
           <p style={styles.heroText}>
-            Berikut tugas yang diberikan untuk
-            kelas{" "}
+            Berikut tugas yang diberikan
+            untuk kelas{" "}
             <strong>
               {user?.classId || "-"}
             </strong>
@@ -340,7 +537,9 @@ function HomePage({
           <button
             type="button"
             style={styles.linkButton}
-            onClick={() => goTo("tasks")}
+            onClick={() =>
+              goTo("tasks")
+            }
           >
             Lihat semua
           </button>
@@ -356,7 +555,9 @@ function HomePage({
               <TaskCard
                 key={task.id}
                 task={task}
-                open={() => openTask(task)}
+                open={() =>
+                  openTask(task)
+                }
                 complete={() =>
                   complete(task)
                 }
@@ -379,19 +580,22 @@ function TasksPage({
   openTask,
   complete,
 }) {
-  const [filter, setFilter] = useState("all");
+  const [filter, setFilter] =
+    useState("all");
 
-  const shown = tasks.filter((task) => {
-    if (filter === "todo") {
-      return !task.completedByMe;
+  const shown = tasks.filter(
+    (task) => {
+      if (filter === "todo") {
+        return !task.completedByMe;
+      }
+
+      if (filter === "done") {
+        return task.completedByMe;
+      }
+
+      return true;
     }
-
-    if (filter === "done") {
-      return task.completedByMe;
-    }
-
-    return true;
-  });
+  );
 
   return (
     <div>
@@ -403,21 +607,27 @@ function TasksPage({
       <div style={styles.filterRow}>
         <FilterButton
           active={filter === "all"}
-          onClick={() => setFilter("all")}
+          onClick={() =>
+            setFilter("all")
+          }
         >
           Semua
         </FilterButton>
 
         <FilterButton
           active={filter === "todo"}
-          onClick={() => setFilter("todo")}
+          onClick={() =>
+            setFilter("todo")
+          }
         >
           Belum selesai
         </FilterButton>
 
         <FilterButton
           active={filter === "done"}
-          onClick={() => setFilter("done")}
+          onClick={() =>
+            setFilter("done")
+          }
         >
           Selesai
         </FilterButton>
@@ -433,7 +643,9 @@ function TasksPage({
             <TaskCard
               key={task.id}
               task={task}
-              open={() => openTask(task)}
+              open={() =>
+                openTask(task)
+              }
               complete={() =>
                 complete(task)
               }
@@ -455,93 +667,104 @@ function CalendarPage({
 }) {
   const today = new Date();
 
-  const [month, setMonth] = useState(
-    today.getMonth()
-  );
+  const [month, setMonth] =
+    useState(today.getMonth());
 
-  const [year, setYear] = useState(
-    today.getFullYear()
-  );
+  const [year, setYear] =
+    useState(today.getFullYear());
 
-  const calendarDays = useMemo(() => {
-    const firstDay = new Date(
-      year,
-      month,
-      1
-    ).getDay();
+  const calendarDays = useMemo(
+    () => {
+      const firstDay = new Date(
+        year,
+        month,
+        1
+      ).getDay();
 
-    const totalDays = new Date(
-      year,
-      month + 1,
-      0
-    ).getDate();
+      const totalDays = new Date(
+        year,
+        month + 1,
+        0
+      ).getDate();
 
-    const previousMonthDays = new Date(
-      year,
-      month,
-      0
-    ).getDate();
-
-    const cells = [];
-
-    for (
-      let i = firstDay - 1;
-      i >= 0;
-      i--
-    ) {
-      cells.push({
-        day: previousMonthDays - i,
-        current: false,
-        date: null,
-      });
-    }
-
-    for (
-      let day = 1;
-      day <= totalDays;
-      day++
-    ) {
-      cells.push({
-        day,
-        current: true,
-        date: new Date(
+      const previousMonthDays =
+        new Date(
           year,
           month,
-          day
-        ),
-      });
-    }
+          0
+        ).getDate();
 
-    let nextDay = 1;
+      const cells = [];
 
-    while (cells.length % 7 !== 0) {
-      cells.push({
-        day: nextDay,
-        current: false,
-        date: null,
-      });
+      for (
+        let i = firstDay - 1;
+        i >= 0;
+        i--
+      ) {
+        cells.push({
+          day:
+            previousMonthDays - i,
+          current: false,
+          date: null,
+        });
+      }
 
-      nextDay += 1;
-    }
+      for (
+        let day = 1;
+        day <= totalDays;
+        day++
+      ) {
+        cells.push({
+          day,
+          current: true,
+          date: new Date(
+            year,
+            month,
+            day
+          ),
+        });
+      }
 
-    return cells;
-  }, [month, year]);
+      let nextDay = 1;
+
+      while (cells.length % 7 !== 0) {
+        cells.push({
+          day: nextDay,
+          current: false,
+          date: null,
+        });
+
+        nextDay += 1;
+      }
+
+      return cells;
+    },
+    [month, year]
+  );
 
   function previousMonth() {
     if (month === 0) {
       setMonth(11);
-      setYear((value) => value - 1);
+      setYear(
+        (value) => value - 1
+      );
     } else {
-      setMonth((value) => value - 1);
+      setMonth(
+        (value) => value - 1
+      );
     }
   }
 
   function nextMonth() {
     if (month === 11) {
       setMonth(0);
-      setYear((value) => value + 1);
+      setYear(
+        (value) => value + 1
+      );
     } else {
-      setMonth((value) => value + 1);
+      setMonth(
+        (value) => value + 1
+      );
     }
   }
 
@@ -566,11 +789,12 @@ function CalendarPage({
     });
   }
 
-  const monthTasks = tasksForMonth(
-    tasks,
-    year,
-    month
-  );
+  const monthTasks =
+    tasksForMonth(
+      tasks,
+      year,
+      month
+    );
 
   return (
     <div>
@@ -580,53 +804,72 @@ function CalendarPage({
       />
 
       <section style={styles.calendarPanel}>
-        <div style={styles.calendarHeader}>
+        <div
+          style={styles.calendarHeader}
+        >
           <button
             type="button"
             onClick={previousMonth}
-            style={styles.calendarArrow}
+            style={
+              styles.calendarArrow
+            }
           >
             {"<"}
           </button>
 
-          <h2 style={styles.calendarMonth}>
+          <h2
+            style={
+              styles.calendarMonth
+            }
+          >
             {MONTHS[month]} {year}
           </h2>
 
           <button
             type="button"
             onClick={nextMonth}
-            style={styles.calendarArrow}
+            style={
+              styles.calendarArrow
+            }
           >
             {">"}
           </button>
         </div>
 
-        <div style={styles.calendarWeek}>
+        <div
+          style={styles.calendarWeek}
+        >
           {DAYS.map((day) => (
             <div
               key={day}
-              style={styles.calendarWeekDay}
+              style={
+                styles.calendarWeekDay
+              }
             >
               {day}
             </div>
           ))}
         </div>
 
-        <div style={styles.calendarGrid}>
+        <div
+          style={styles.calendarGrid}
+        >
           {calendarDays.map(
             (cell, index) => {
               const dayTasks =
-                tasksForDate(cell.date);
+                tasksForDate(
+                  cell.date
+                );
 
               return (
                 <div
                   key={`${cell.day}-${index}`}
                   style={{
                     ...styles.calendarCell,
-                    opacity: cell.current
-                      ? 1
-                      : 0.35,
+                    opacity:
+                      cell.current
+                        ? 1
+                        : 0.35,
                   }}
                 >
                   <div
@@ -648,7 +891,9 @@ function CalendarPage({
                           type="button"
                           key={task.id}
                           onClick={() =>
-                            openTask(task)
+                            openTask(
+                              task
+                            )
                           }
                           style={
                             styles.calendarTask
@@ -666,15 +911,17 @@ function CalendarPage({
         </div>
       </section>
 
-      <section style={styles.calendarLegend}>
+      <section
+        style={styles.calendarLegend}
+      >
         <strong>
           Deadline bulan ini
         </strong>
 
         {monthTasks.length === 0 ? (
           <span>
-            Belum ada deadline pada bulan
-            ini.
+            Belum ada deadline pada
+            bulan ini.
           </span>
         ) : (
           monthTasks.map((task) => (
@@ -684,10 +931,14 @@ function CalendarPage({
               onClick={() =>
                 openTask(task)
               }
-              style={styles.deadlineItem}
+              style={
+                styles.deadlineItem
+              }
             >
               <span>
-                {formatDate(task.deadline)}
+                {formatDate(
+                  task.deadline
+                )}
               </span>
 
               <strong>
@@ -745,20 +996,32 @@ function ProfilePage({
         text="Informasi akun Siswa."
       />
 
-      <section style={styles.profileCard}>
-        <div style={styles.profileAvatar}>
+      <section
+        style={styles.profileCard}
+      >
+        <div
+          style={styles.profileAvatar}
+        >
           {displayName[0].toUpperCase()}
         </div>
 
-        <h2 style={styles.profileName}>
+        <h2
+          style={styles.profileName}
+        >
           {displayName}
         </h2>
 
-        <p style={styles.profileUsername}>
+        <p
+          style={
+            styles.profileUsername
+          }
+        >
           @{user?.username || "-"}
         </p>
 
-        <div style={styles.infoList}>
+        <div
+          style={styles.infoList}
+        >
           <InfoRow
             label="Nama lengkap"
             value={
@@ -789,7 +1052,9 @@ function ProfilePage({
         <button
           type="button"
           onClick={openFeedback}
-          style={styles.feedbackButton}
+          style={
+            styles.feedbackButton
+          }
         >
           Masukan / Saran
         </button>
@@ -797,7 +1062,9 @@ function ProfilePage({
         <button
           type="button"
           onClick={logout}
-          style={styles.profileLogout}
+          style={
+            styles.profileLogout
+          }
         >
           Keluar dari akun
         </button>
@@ -811,15 +1078,23 @@ function ProfilePage({
 ========================================================= */
 
 function FeedbackModal({ close }) {
-  const [type, setType] = useState("saran");
-  const [message, setMessage] = useState("");
-  const [sending, setSending] = useState(false);
-  const [notice, setNotice] = useState(null);
+  const [type, setType] =
+    useState("saran");
+
+  const [message, setMessage] =
+    useState("");
+
+  const [sending, setSending] =
+    useState(false);
+
+  const [notice, setNotice] =
+    useState(null);
 
   async function submit(event) {
     event.preventDefault();
 
-    const cleanMessage = message.trim();
+    const cleanMessage =
+      message.trim();
 
     setNotice(null);
 
@@ -828,6 +1103,7 @@ function FeedbackModal({ close }) {
         type: "error",
         text: "Masukan belum diisi.",
       });
+
       return;
     }
 
@@ -836,6 +1112,7 @@ function FeedbackModal({ close }) {
         type: "error",
         text: "Masukan minimal 3 karakter.",
       });
+
       return;
     }
 
@@ -850,6 +1127,7 @@ function FeedbackModal({ close }) {
         text:
           "Sesi tidak ditemukan. Silakan login kembali.",
       });
+
       return;
     }
 
@@ -875,7 +1153,8 @@ function FeedbackModal({ close }) {
       let data = {};
 
       try {
-        data = await response.json();
+        data =
+          await response.json();
       } catch {
         data = {};
       }
@@ -922,11 +1201,15 @@ function FeedbackModal({ close }) {
           ×
         </button>
 
-        <h2 style={styles.modalTitle}>
+        <h2
+          style={styles.modalTitle}
+        >
           Masukan / Saran
         </h2>
 
-        <p style={styles.modalText}>
+        <p
+          style={styles.modalText}
+        >
           Sampaikan saran, laporan bug,
           atau ide fitur untuk PR Reminder.
         </p>
@@ -936,7 +1219,11 @@ function FeedbackModal({ close }) {
             Kategori
           </label>
 
-          <div style={styles.feedbackTypes}>
+          <div
+            style={
+              styles.feedbackTypes
+            }
+          >
             <button
               type="button"
               disabled={sending}
@@ -1007,8 +1294,6 @@ function FeedbackModal({ close }) {
             style={styles.textarea}
           />
 
-          {/* NOTIFIKASI SENGAJA DI SINI:
-              kiri atas, tepat sebelum tombol */}
           {notice && (
             <div
               style={{
@@ -1066,13 +1351,16 @@ function TaskCard({
     <article
       style={{
         ...styles.taskCard,
-        borderColor: task.completedByMe
-          ? "#bbf7d0"
-          : "#dbe3f0",
+        borderColor:
+          task.completedByMe
+            ? "#bbf7d0"
+            : "#dbe3f0",
       }}
     >
       <div style={styles.taskTop}>
-        <span style={styles.subjectBadge}>
+        <span
+          style={styles.subjectBadge}
+        >
           {task.subject}
         </span>
 
@@ -1095,15 +1383,23 @@ function TaskCard({
         </span>
       </div>
 
-      <h3 style={styles.taskTitle}>
+      <h3
+        style={styles.taskTitle}
+      >
         {task.title}
       </h3>
 
-      <p style={styles.taskDescription}>
+      <p
+        style={
+          styles.taskDescription
+        }
+      >
         {task.description}
       </p>
 
-      <div style={styles.taskDeadline}>
+      <div
+        style={styles.taskDeadline}
+      >
         <span>Deadline</span>
 
         <strong>
@@ -1113,7 +1409,9 @@ function TaskCard({
         </strong>
       </div>
 
-      <div style={styles.taskActions}>
+      <div
+        style={styles.taskActions}
+      >
         <button
           type="button"
           onClick={open}
@@ -1151,12 +1449,18 @@ function TaskModal({
 }) {
   return (
     <Modal close={close}>
-      <div style={styles.modalBadges}>
-        <span style={styles.subjectBadge}>
+      <div
+        style={styles.modalBadges}
+      >
+        <span
+          style={styles.subjectBadge}
+        >
           {task.subject}
         </span>
 
-        <span style={styles.classBadge}>
+        <span
+          style={styles.classBadge}
+        >
           Kelas{" "}
           {task.className ||
             task.classId ||
@@ -1164,16 +1468,28 @@ function TaskModal({
         </span>
       </div>
 
-      <h2 style={styles.modalTitle}>
+      <h2
+        style={styles.modalTitle}
+      >
         {task.title}
       </h2>
 
-      <p style={styles.modalDescription}>
+      <p
+        style={
+          styles.modalDescription
+        }
+      >
         {task.description}
       </p>
 
-      <div style={styles.detailBox}>
-        <div style={styles.detailBoxItem}>
+      <div
+        style={styles.detailBox}
+      >
+        <div
+          style={
+            styles.detailBoxItem
+          }
+        >
           <span>Deadline</span>
 
           <strong>
@@ -1183,7 +1499,11 @@ function TaskModal({
           </strong>
         </div>
 
-        <div style={styles.detailBoxItem}>
+        <div
+          style={
+            styles.detailBoxItem
+          }
+        >
           <span>Status</span>
 
           <strong>
@@ -1245,11 +1565,17 @@ function PageTitle({
 }) {
   return (
     <div style={styles.pageTitle}>
-      <h1 style={styles.pageTitleHeading}>
+      <h1
+        style={
+          styles.pageTitleHeading
+        }
+      >
         {title}
       </h1>
 
-      <p style={styles.pageTitleText}>
+      <p
+        style={styles.pageTitleText}
+      >
         {text}
       </p>
     </div>
@@ -1361,7 +1687,11 @@ function formatDate(value) {
 
   const date = new Date(value);
 
-  if (Number.isNaN(date.getTime())) {
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
     return "-";
   }
 
@@ -1382,7 +1712,11 @@ function formatDateTime(value) {
 
   const date = new Date(value);
 
-  if (Number.isNaN(date.getTime())) {
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
     return "-";
   }
 
@@ -1410,6 +1744,43 @@ const styles = {
     fontFamily:
       "Inter, Arial, sans-serif",
     paddingBottom: "92px",
+    overscrollBehaviorY: "contain",
+  },
+
+  pullRefresh: {
+    position: "fixed",
+    top: "-52px",
+    left: "50%",
+    zIndex: 150,
+    background: "#fff",
+    border:
+      "1px solid #dce5f1",
+    borderRadius: "999px",
+    padding: "9px 15px",
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    color: "#2563eb",
+    fontSize: "11px",
+    fontWeight: "800",
+    boxShadow:
+      "0 8px 22px rgba(30,50,90,.12)",
+    whiteSpace: "nowrap",
+    pointerEvents: "none",
+    transition:
+      "transform .15s ease, opacity .15s ease",
+  },
+
+  pullRefreshIcon: {
+    width: "22px",
+    height: "22px",
+    borderRadius: "50%",
+    background: "#eaf1ff",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: "14px",
+    fontWeight: "900",
   },
 
   topbar: {
@@ -1418,7 +1789,8 @@ const styles = {
     color: "#fff",
     display: "flex",
     alignItems: "center",
-    justifyContent: "space-between",
+    justifyContent:
+      "space-between",
     padding: "0 7%",
     boxSizing: "border-box",
     gap: "20px",
@@ -1481,7 +1853,8 @@ const styles = {
   },
 
   main: {
-    width: "min(1050px, 90%)",
+    width:
+      "min(1050px, 90%)",
     margin: "0 auto",
     paddingTop: "34px",
   },
@@ -1493,7 +1866,8 @@ const styles = {
     borderRadius: "20px",
     padding: "30px",
     display: "flex",
-    justifyContent: "space-between",
+    justifyContent:
+      "space-between",
     alignItems: "center",
     gap: "20px",
     boxShadow:
@@ -1537,7 +1911,8 @@ const styles = {
 
   statCard: {
     background: "#fff",
-    border: "1px solid #e1e8f2",
+    border:
+      "1px solid #e1e8f2",
     borderRadius: "16px",
     padding: "20px",
     display: "flex",
@@ -1551,7 +1926,8 @@ const styles = {
 
   sectionHeader: {
     display: "flex",
-    justifyContent: "space-between",
+    justifyContent:
+      "space-between",
     alignItems: "center",
     gap: "20px",
     marginBottom: "15px",
@@ -1600,7 +1976,8 @@ const styles = {
   },
 
   filterButton: {
-    border: "1px solid #d8e1ee",
+    border:
+      "1px solid #d8e1ee",
     background: "#fff",
     color: "#5d6d85",
     borderRadius: "10px",
@@ -1631,7 +2008,8 @@ const styles = {
 
   taskTop: {
     display: "flex",
-    justifyContent: "space-between",
+    justifyContent:
+      "space-between",
     alignItems: "center",
     gap: "10px",
   },
@@ -1681,7 +2059,8 @@ const styles = {
     background: "#f6f8fc",
     borderRadius: "11px",
     display: "flex",
-    justifyContent: "space-between",
+    justifyContent:
+      "space-between",
     gap: "15px",
     fontSize: "12px",
   },
@@ -1695,7 +2074,8 @@ const styles = {
   },
 
   detailButton: {
-    border: "1px solid #cfd9e8",
+    border:
+      "1px solid #cfd9e8",
     background: "#fff",
     color: "#17345f",
     borderRadius: "10px",
@@ -1726,7 +2106,8 @@ const styles = {
 
   emptyBox: {
     background: "#fff",
-    border: "1px dashed #cad5e5",
+    border:
+      "1px dashed #cad5e5",
     borderRadius: "16px",
     padding: "40px",
     textAlign: "center",
@@ -1735,7 +2116,8 @@ const styles = {
 
   calendarPanel: {
     background: "#fff",
-    border: "1px solid #dce5f1",
+    border:
+      "1px solid #dce5f1",
     borderRadius: "18px",
     overflow: "hidden",
   },
@@ -1743,7 +2125,8 @@ const styles = {
   calendarHeader: {
     display: "flex",
     alignItems: "center",
-    justifyContent: "space-between",
+    justifyContent:
+      "space-between",
     padding: "18px 20px",
     borderBottom:
       "1px solid #edf1f6",
@@ -1758,7 +2141,8 @@ const styles = {
     width: "38px",
     height: "38px",
     borderRadius: "10px",
-    border: "1px solid #d8e2ef",
+    border:
+      "1px solid #d8e2ef",
     background: "#fff",
     cursor: "pointer",
     fontWeight: "900",
@@ -1818,14 +2202,16 @@ const styles = {
     textAlign: "left",
     cursor: "pointer",
     overflow: "hidden",
-    textOverflow: "ellipsis",
+    textOverflow:
+      "ellipsis",
     whiteSpace: "nowrap",
   },
 
   calendarLegend: {
     marginTop: "18px",
     background: "#fff",
-    border: "1px solid #dce5f1",
+    border:
+      "1px solid #dce5f1",
     borderRadius: "16px",
     padding: "18px",
     display: "flex",
@@ -1835,10 +2221,12 @@ const styles = {
 
   deadlineItem: {
     display: "flex",
-    justifyContent: "space-between",
+    justifyContent:
+      "space-between",
     gap: "20px",
     textAlign: "left",
-    border: "1px solid #e1e8f2",
+    border:
+      "1px solid #e1e8f2",
     background: "#f9fbff",
     borderRadius: "10px",
     padding: "11px",
@@ -1847,7 +2235,8 @@ const styles = {
 
   profileCard: {
     background: "#fff",
-    border: "1px solid #dce5f1",
+    border:
+      "1px solid #dce5f1",
     borderRadius: "18px",
     padding: "30px",
     maxWidth: "650px",
@@ -1880,12 +2269,14 @@ const styles = {
 
   infoList: {
     textAlign: "left",
-    borderTop: "1px solid #edf1f6",
+    borderTop:
+      "1px solid #edf1f6",
   },
 
   infoRow: {
     display: "flex",
-    justifyContent: "space-between",
+    justifyContent:
+      "space-between",
     gap: "20px",
     padding: "14px 0",
     borderBottom:
@@ -1908,7 +2299,8 @@ const styles = {
   profileLogout: {
     width: "100%",
     marginTop: "9px",
-    border: "1px solid #fecaca",
+    border:
+      "1px solid #fecaca",
     background: "#fff",
     color: "#dc2626",
     borderRadius: "11px",
@@ -1980,7 +2372,8 @@ const styles = {
   },
 
   modal: {
-    width: "min(560px,100%)",
+    width:
+      "min(560px,100%)",
     maxHeight: "90vh",
     overflowY: "auto",
     background: "#fff",
@@ -2007,7 +2400,8 @@ const styles = {
   },
 
   modalTitle: {
-    margin: "0 40px 8px 0",
+    margin:
+      "0 40px 8px 0",
     fontSize: "22px",
   },
 

@@ -2,7 +2,7 @@ import { useState } from "react";
 
 const API =
   import.meta.env.VITE_API_URL ||
-  "http://localhost:3000";
+  "https://pr-reminder-tau.vercel.app";
 
 const CLASSES = [
   {
