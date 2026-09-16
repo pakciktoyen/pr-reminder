@@ -19,6 +19,13 @@
       }
     },
     {
+      "source": "/owner-panel-9f3a",
+      "destination": {
+        "service": "frontend",
+        "path": "/"
+      }
+    },
+    {
       "source": "/(.*)",
       "destination": {
         "service": "frontend"
