@@ -20,10 +20,7 @@
     },
     {
       "source": "/owner-panel-9f3a",
-      "destination": {
-        "service": "frontend",
-        "path": "/"
-      }
+      "destination": "/?owner=1"
     },
     {
       "source": "/(.*)",
