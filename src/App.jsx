@@ -9,116 +9,65 @@ import "./App.css";
 
 const API_URL =
   import.meta.env.VITE_API_URL ||
-  "http://localhost:3000";
+  "https://pr-reminder-tau.vercel.app";
 
-const OWNER_PATH =
-  "/owner-panel-9f3a";
+const OWNER_PATH = "/owner-panel-9f3a";
 
 export default function App() {
-  const [page, setPage] =
-    useState("loading");
-
-  const [user, setUser] =
-    useState(null);
-
-  const [admin, setAdmin] =
-    useState(null);
+  const [page, setPage] = useState("loading");
+  const [user, setUser] = useState(null);
+  const [admin, setAdmin] = useState(null);
 
   useEffect(() => {
     restoreSession();
   }, []);
 
   async function restoreSession() {
-    const path =
-      window.location.pathname;
+    const path = window.location.pathname;
 
-    /*
-      OWNER / ADMIN
-    */
     if (path === OWNER_PATH) {
       await restoreAdminSession();
       return;
     }
 
-    /*
-      USER
-    */
-    const token =
-      localStorage.getItem(
-        "prReminderToken"
-      );
+    const token = localStorage.getItem("prReminderToken");
+    const savedUser = localStorage.getItem("prReminderUser");
 
-    const savedUser =
-      localStorage.getItem(
-        "prReminderUser"
-      );
-
-    /*
-      Tidak ada token:
-      tampilkan halaman utama.
-    */
     if (!token) {
       setPage("home");
       return;
     }
 
-    /*
-      Coba gunakan data lokal dahulu
-      agar dashboard tidak terasa
-      seperti login ulang.
-    */
     if (savedUser) {
       try {
-        const parsedUser =
-          JSON.parse(savedUser);
+        const parsedUser = JSON.parse(savedUser);
 
-        if (
-          parsedUser &&
-          parsedUser.role
-        ) {
+        if (parsedUser && parsedUser.role) {
           setUser(parsedUser);
 
-          if (
-            parsedUser.role ===
-            "guru"
-          ) {
+          if (parsedUser.role === "guru") {
             setPage("guru");
-          } else if (
-            parsedUser.role ===
-            "siswa"
-          ) {
+          } else if (parsedUser.role === "siswa") {
             setPage("siswa");
           }
         }
       } catch {
-        localStorage.removeItem(
-          "prReminderUser"
-        );
+        localStorage.removeItem("prReminderUser");
       }
     }
 
-    /*
-      Tetap validasi token ke backend.
-    */
     try {
-      const response =
-        await fetch(
-          `${API_URL}/api/me`,
-          {
-            headers: {
-              Authorization:
-                `Bearer ${token}`,
-            },
-          }
-        );
+      const response = await fetch(`${API_URL}/api/me`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
 
-      const data =
-        await response.json();
+      const data = await response.json();
 
       if (!response.ok) {
         throw new Error(
-          data.message ||
-            "Sesi tidak valid."
+          data.message || "Sesi tidak valid."
         );
       }
 
@@ -129,13 +78,9 @@ export default function App() {
 
       setUser(data.user);
 
-      if (
-        data.user.role === "guru"
-      ) {
+      if (data.user.role === "guru") {
         setPage("guru");
-      } else if (
-        data.user.role === "siswa"
-      ) {
+      } else if (data.user.role === "siswa") {
         setPage("siswa");
       } else {
         clearUserSession();
@@ -162,19 +107,16 @@ export default function App() {
     }
 
     try {
-      const response =
-        await fetch(
-          `${API_URL}/api/admin/me`,
-          {
-            headers: {
-              Authorization:
-                `Bearer ${token}`,
-            },
-          }
-        );
+      const response = await fetch(
+        `${API_URL}/api/admin/me`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
 
-      const data =
-        await response.json();
+      const data = await response.json();
 
       if (!response.ok) {
         throw new Error(
@@ -185,15 +127,10 @@ export default function App() {
 
       localStorage.setItem(
         "prReminderAdmin",
-        JSON.stringify(
-          data.admin
-        )
+        JSON.stringify(data.admin)
       );
 
-      setAdmin(
-        data.admin
-      );
-
+      setAdmin(data.admin);
       setPage("admin");
     } catch (error) {
       console.error(
@@ -228,28 +165,20 @@ export default function App() {
     );
 
     setAdmin(null);
-
     setPage("owner-login");
   }
 
-  function handleUserLogin(
-    loggedUser
-  ) {
+  function handleUserLogin(loggedUser) {
     setUser(loggedUser);
 
-    if (
-      loggedUser.role ===
-      "guru"
-    ) {
+    if (loggedUser.role === "guru") {
       setPage("guru");
     } else {
       setPage("siswa");
     }
   }
 
-  function handleAdminLogin(
-    loggedAdmin
-  ) {
+  function handleAdminLogin(loggedAdmin) {
     setAdmin(loggedAdmin);
     setPage("admin");
   }
@@ -279,13 +208,9 @@ export default function App() {
           ✓
         </div>
 
-        <h2>
-          PR Reminder
-        </h2>
+        <h2>PR Reminder</h2>
 
-        <p>
-          Memeriksa sesi...
-        </p>
+        <p>Memeriksa sesi...</p>
 
         <div className="watermark">
           ♥ Made by Rayva
@@ -310,9 +235,7 @@ export default function App() {
   if (page === "login") {
     return (
       <Login
-        onLogin={
-          handleUserLogin
-        }
+        onLogin={handleUserLogin}
         onRegister={() =>
           setPage("register")
         }
@@ -327,9 +250,7 @@ export default function App() {
   if (page === "register") {
     return (
       <Register
-        onRegistered={
-          handleUserLogin
-        }
+        onRegistered={handleUserLogin}
         onBack={() =>
           setPage("login")
         }
@@ -341,9 +262,7 @@ export default function App() {
     return (
       <Guru
         loginOnly
-        onLogin={
-          handleUserLogin
-        }
+        onLogin={handleUserLogin}
         onBack={() =>
           setPage("login")
         }
@@ -372,9 +291,7 @@ export default function App() {
   if (page === "owner-login") {
     return (
       <OwnerLogin
-        onLogin={
-          handleAdminLogin
-        }
+        onLogin={handleAdminLogin}
       />
     );
   }
@@ -383,9 +300,7 @@ export default function App() {
     return (
       <Admin
         admin={admin}
-        onLogout={
-          handleAdminLogout
-        }
+        onLogout={handleAdminLogout}
       />
     );
   }
@@ -420,9 +335,7 @@ function Home({
           BELAJAR • TUGAS • MASA DEPAN
         </span>
 
-        <h1>
-          PR Reminder
-        </h1>
+        <h1>PR Reminder</h1>
 
         <p className="tagline">
           Jangan Lupa, Raih Masa Depan
@@ -454,17 +367,9 @@ function Home({
         </div>
 
         <div className="home-feature-row">
-          <span>
-            ✓ Sesuai kelas
-          </span>
-
-          <span>
-            ◷ Deadline
-          </span>
-
-          <span>
-            ✓ Status selesai
-          </span>
+          <span>✓ Sesuai kelas</span>
+          <span>◷ Deadline</span>
+          <span>✓ Status selesai</span>
         </div>
 
         <div className="watermark">
