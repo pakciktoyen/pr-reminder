@@ -122,6 +122,11 @@ export default function Admin({ onLogout }) {
   const [showDeleteTasksModal, setShowDeleteTasksModal] =
     useState(false);
 
+  const [deletingUserId, setDeletingUserId] = useState(null);
+  const [userToDelete, setUserToDelete] = useState(null);
+  const [showDeleteUserModal, setShowDeleteUserModal] =
+    useState(false);
+
   const accountRows = useMemo(() => users, [users]);
 
   async function apiFetch(path, options = {}) {
@@ -314,6 +319,43 @@ export default function Admin({ onLogout }) {
       setError(
         err.message || "Gagal mengubah status akun."
       );
+    }
+  }
+
+  async function handleDeleteUser() {
+    if (!userToDelete || deletingUserId) return;
+
+    setDeletingUserId(userToDelete.id);
+    setError("");
+    setMessage("");
+
+    try {
+      const data = await apiFetch(
+        `/api/admin/users/${userToDelete.id}`,
+        {
+          method: "DELETE",
+        }
+      );
+
+      setShowDeleteUserModal(false);
+      setUserToDelete(null);
+
+      await loadDashboard();
+
+      if (search.trim()) {
+        await handleSearchAccounts();
+      }
+
+      setMessage(
+        data.message ||
+          `Akun ${userToDelete.username} berhasil dihapus permanen.`
+      );
+    } catch (err) {
+      setError(
+        err.message || "Gagal menghapus akun."
+      );
+    } finally {
+      setDeletingUserId(null);
     }
   }
 
@@ -702,25 +744,56 @@ export default function Admin({ onLogout }) {
                             </td>
 
                             <td style={styles.td}>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  handleBlockToggle(
-                                    user
-                                  )
-                                }
-                                style={
-                                  user.status ===
-                                  "blocked"
-                                    ? styles.unblockButton
-                                    : styles.blockButton
-                                }
+                              <div
+                                style={{
+                                  display: "flex",
+                                  gap: 7,
+                                  flexWrap: "wrap",
+                                }}
                               >
-                                {user.status ===
-                                "blocked"
-                                  ? "Buka"
-                                  : "Blokir"}
-                              </button>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleBlockToggle(
+                                      user
+                                    )
+                                  }
+                                  disabled={
+                                    deletingUserId ===
+                                    user.id
+                                  }
+                                  style={
+                                    user.status ===
+                                    "blocked"
+                                      ? styles.unblockButton
+                                      : styles.blockButton
+                                  }
+                                >
+                                  {user.status ===
+                                  "blocked"
+                                    ? "Buka"
+                                    : "Blokir"}
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setUserToDelete(user);
+                                    setShowDeleteUserModal(true);
+                                    setError("");
+                                    setMessage("");
+                                  }}
+                                  disabled={
+                                    deletingUserId ===
+                                    user.id
+                                  }
+                                  style={
+                                    styles.deleteAccountButton
+                                  }
+                                >
+                                  Hapus
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         ))
@@ -1239,6 +1312,96 @@ export default function Admin({ onLogout }) {
                 {deletingAllTasks
                   ? "Menghapus..."
                   : "Ya, Hapus Semua"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showDeleteUserModal && userToDelete && (
+        <div style={styles.overlay}>
+          <div style={styles.modal}>
+            <div style={styles.modalHeader}>
+              <div>
+                <div
+                  style={{
+                    ...styles.modalEyebrow,
+                    color: "#b42318",
+                  }}
+                >
+                  HAPUS AKUN PERMANEN
+                </div>
+
+                <h2 style={styles.modalTitle}>
+                  Hapus Akun?
+                </h2>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  if (deletingUserId) return;
+                  setShowDeleteUserModal(false);
+                  setUserToDelete(null);
+                }}
+                disabled={Boolean(deletingUserId)}
+                style={styles.closeButton}
+              >
+                ×
+              </button>
+            </div>
+
+            <div style={styles.deleteWarning}>
+              <strong>
+                {userToDelete.fullName ||
+                  userToDelete.username}
+              </strong>{" "}
+              akan dihapus <strong>secara permanen</strong>.
+              <br />
+              <br />
+              Username, status akun, data terkait, dan riwayat
+              yang terhubung dengan akun ini tidak dapat dipulihkan.
+              {userToDelete.role === "guru" && (
+                <>
+                  <br />
+                  <br />
+                  Karena akun ini adalah Guru, tugas yang dibuat
+                  oleh Guru ini juga akan ikut terhapus beserta
+                  data progresnya.
+                </>
+              )}
+              {userToDelete.role === "siswa" && (
+                <>
+                  <br />
+                  <br />
+                  Data penyelesaian tugas dan masukan yang terkait
+                  dengan akun Siswa ini juga akan ikut terhapus.
+                </>
+              )}
+            </div>
+
+            <div style={styles.modalActions}>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowDeleteUserModal(false);
+                  setUserToDelete(null);
+                }}
+                disabled={Boolean(deletingUserId)}
+                style={styles.ghostButton}
+              >
+                Batal
+              </button>
+
+              <button
+                type="button"
+                onClick={handleDeleteUser}
+                disabled={Boolean(deletingUserId)}
+                style={styles.deleteAccountConfirmButton}
+              >
+                {deletingUserId
+                  ? "Menghapus..."
+                  : "Ya, Hapus Akun"}
               </button>
             </div>
           </div>
@@ -1883,6 +2046,26 @@ const styles = {
     borderRadius: 8,
     padding: "8px 10px",
     fontWeight: 700,
+    cursor: "pointer",
+  },
+
+  deleteAccountButton: {
+    border: "1px solid #fecaca",
+    background: "#fff1f2",
+    color: "#b42318",
+    borderRadius: 8,
+    padding: "8px 10px",
+    fontWeight: 700,
+    cursor: "pointer",
+  },
+
+  deleteAccountConfirmButton: {
+    border: "1px solid #b42318",
+    background: "#b42318",
+    color: "#fff",
+    borderRadius: 9,
+    padding: "10px 14px",
+    fontWeight: 800,
     cursor: "pointer",
   },
 
