@@ -181,7 +181,7 @@ function normalizeFeedbackType(value) {
 ========================================================= */
 
 async function sendNewTaskNotification({ task, teacherName }) {
-  if (!firebaseConfigured || !admin.apps.length) {
+  if (!firebaseConfigured || !admin.getApps().length) {
     return {
       sent: 0,
       skipped: true,
@@ -2648,3 +2648,4 @@ if (require.main === module) {
 }
 
 module.exports = app;
+
