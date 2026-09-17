@@ -1,4 +1,4 @@
-require("dotenv").config();
+﻿require("dotenv").config();
 
 const express = require("express");
 const cors = require("cors");
@@ -45,7 +45,7 @@ const firebaseConfigured = Boolean(
   FIREBASE_PRIVATE_KEY
 );
 
-if (firebaseConfigured && !admin.apps.length) {
+if (firebaseConfigured && admin.getApps().length === 0) {
   try {
     admin.initializeApp({
       credential: admin.credential.cert({
