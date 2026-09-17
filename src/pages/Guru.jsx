@@ -244,6 +244,7 @@ function GuruDashboard({ user, onLogout }) {
   const [selectedTask, setSelectedTask] = useState(null);
   const [showFeedback, setShowFeedback] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [deletingTaskId, setDeletingTaskId] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
 
   const token = localStorage.getItem("prReminderToken");
@@ -405,6 +406,68 @@ function GuruDashboard({ user, onLogout }) {
     }
   }
 
+  async function deleteTask(taskId, taskTitle) {
+    if (!token) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Hapus tugas "${taskTitle || "ini"}"?\n\nTugas yang dihapus tidak dapat dikembalikan.`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingTaskId(taskId);
+
+    try {
+      const response = await fetch(
+        `${API_URL}/api/tasks/${taskId}`,
+        {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      let data = {};
+
+      try {
+        data = await response.json();
+      } catch {
+        data = {};
+      }
+
+      if (!response.ok) {
+        throw new Error(
+          data.message || "Gagal menghapus tugas."
+        );
+      }
+
+      setTasks((currentTasks) =>
+        currentTasks.filter(
+          (task) => Number(task.id) !== Number(taskId)
+        )
+      );
+
+      setSelectedTask((currentTask) =>
+        currentTask &&
+        Number(currentTask.id) === Number(taskId)
+          ? null
+          : currentTask
+      );
+    } catch (error) {
+      console.error("DELETE TASK:", error);
+      window.alert(
+        error.message || "Gagal menghapus tugas."
+      );
+    } finally {
+      setDeletingTaskId(null);
+    }
+  }
+
   const statistics = useMemo(() => {
     const total = tasks.length;
 
@@ -560,6 +623,8 @@ function GuruDashboard({ user, onLogout }) {
                       onClick={() =>
                         setSelectedTask(task)
                       }
+                      onDelete={deleteTask}
+                      deletingTaskId={deletingTaskId}
                     />
                   ))}
               </div>
@@ -604,6 +669,8 @@ function GuruDashboard({ user, onLogout }) {
                     onClick={() =>
                       setSelectedTask(task)
                     }
+                      onDelete={deleteTask}
+                      deletingTaskId={deletingTaskId}
                   />
                 ))}
               </div>
@@ -1480,58 +1547,58 @@ function SectionHeader({
 function TeacherTaskCard({
   task,
   onClick,
+  onDelete,
+  deletingTaskId,
 }) {
+  const isDeleting =
+    Number(deletingTaskId) === Number(task.id);
+
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onClick}
-      style={dashboardStyles.taskCard}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onClick();
+        }
+      }}
+      style={{
+        ...dashboardStyles.taskCard,
+        cursor: isDeleting ? "default" : "pointer",
+        opacity: isDeleting ? 0.65 : 1,
+      }}
     >
       <div style={dashboardStyles.taskIcon}>
         T
       </div>
 
       <div style={dashboardStyles.taskBody}>
-        <div
-          style={dashboardStyles.taskTop}
-        >
-          <span
-            style={dashboardStyles.subject}
-          >
+        <div style={dashboardStyles.taskTop}>
+          <span style={dashboardStyles.subject}>
             {task.subject}
           </span>
 
-          <span
-            style={dashboardStyles.taskClass}
-          >
+          <span style={dashboardStyles.taskClass}>
             {task.className ||
               task.classId ||
               "-"}
           </span>
         </div>
 
-        <h3
-          style={dashboardStyles.taskTitle}
-        >
+        <h3 style={dashboardStyles.taskTitle}>
           {task.title}
         </h3>
 
-        <p
-          style={
-            dashboardStyles.taskDescription
-          }
-        >
+        <p style={dashboardStyles.taskDescription}>
           {task.description}
         </p>
 
-        <div
-          style={dashboardStyles.taskMeta}
-        >
+        <div style={dashboardStyles.taskMeta}>
           <span>
             Deadline:{" "}
-            {formatDateTime(
-              task.deadline
-            )}
+            {formatDateTime(task.deadline)}
           </span>
 
           <span>
@@ -1542,12 +1609,52 @@ function TeacherTaskCard({
         </div>
       </div>
 
-      <span
-        style={dashboardStyles.taskArrow}
+      <div
+        style={{
+          alignSelf: "center",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          gap: 7,
+        }}
       >
-        &gt;
-      </span>
-    </button>
+        <span
+          aria-hidden="true"
+          style={dashboardStyles.taskArrow}
+        >
+          &gt;
+        </span>
+
+        <button
+          type="button"
+          disabled={isDeleting}
+          aria-label={
+            isDeleting
+              ? "Menghapus tugas"
+              : `Hapus tugas ${task.title || ""}`
+          }
+          onClick={(event) => {
+            event.stopPropagation();
+            onDelete(task.id, task.title);
+          }}
+          style={{
+            border: "1px solid #f0caca",
+            background: "#fff7f7",
+            color: "#c44747",
+            borderRadius: 8,
+            padding: "5px 7px",
+            fontSize: 10,
+            fontWeight: 900,
+            cursor: isDeleting
+              ? "not-allowed"
+              : "pointer",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {isDeleting ? "Menghapus..." : "Hapus"}
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -2135,7 +2242,7 @@ const dashboardStyles = {
     minWidth: 0,
     display: "grid",
     gridTemplateColumns:
-      "42px minmax(0,1fr) 12px",
+      "42px minmax(0,1fr) auto",
     gap: 12,
     padding: 14,
     boxSizing: "border-box",

@@ -1,17 +1,6 @@
-import {
-  useEffect,
-  useState,
-} from "react";
-
-import { Capacitor } from "@capacitor/core";
-
-import {
-  PushNotifications,
-} from "@capacitor/push-notifications";
-
-import {
-  LocalNotifications,
-} from "@capacitor/local-notifications";
+import { useEffect, useState } from "react";
+import { PushNotifications } from "@capacitor/push-notifications";
+import { LocalNotifications } from "@capacitor/local-notifications";
 
 import Login from "./pages/Login.jsx";
 import Register from "./pages/Register.jsx";
@@ -19,18 +8,333 @@ import Guru from "./pages/Guru.jsx";
 import Siswa from "./pages/Siswa.jsx";
 import Admin from "./pages/Admin.jsx";
 import OwnerLogin from "./pages/OwnerLogin.jsx";
-
 import "./App.css";
 
+/*
+  ==========================================================
+  PRODUCTION API
+  ==========================================================
+*/
+
 const API_URL =
-  import.meta.env.VITE_API_URL ||
-  "http://localhost:3000";
+  "https://pr-reminder-tau.vercel.app";
+
+/*
+  ==========================================================
+  OWNER PATH
+  ==========================================================
+*/
 
 const OWNER_PATH =
   "/owner-panel-9f3a";
 
-const PUSH_CHANNEL_ID =
-  "pr_reminder";
+/*
+  ==========================================================
+  NOTIFICATION CHANNEL
+  ==========================================================
+*/
+
+const NOTIFICATION_CHANNEL_ID =
+  "pr_reminder_v3";
+
+let pushListenersReady = false;
+
+/*
+  ==========================================================
+  SETUP PUSH NOTIFICATIONS
+  SISWA ONLY
+  ==========================================================
+*/
+
+async function setupPushNotifications(user) {
+  if (!user) {
+    return;
+  }
+
+  if (user.role !== "siswa") {
+    return;
+  }
+
+  try {
+    /*
+      ------------------------------------------------------
+      PUSH PERMISSION
+      ------------------------------------------------------
+    */
+
+    const pushPermission =
+      await PushNotifications.checkPermissions();
+
+    let receivePermission =
+      pushPermission.receive;
+
+    if (receivePermission !== "granted") {
+      const requested =
+        await PushNotifications.requestPermissions();
+
+      receivePermission =
+        requested.receive;
+    }
+
+    if (receivePermission !== "granted") {
+      console.warn(
+        "Izin notifikasi belum diberikan."
+      );
+
+      return;
+    }
+
+    /*
+      ------------------------------------------------------
+      LOCAL NOTIFICATION PERMISSION
+      ------------------------------------------------------
+    */
+
+    try {
+      const localPermission =
+        await LocalNotifications.checkPermissions();
+
+      if (
+        localPermission.display !==
+        "granted"
+      ) {
+        await LocalNotifications.requestPermissions();
+      }
+    } catch (error) {
+      console.warn(
+        "LOCAL NOTIFICATION PERMISSION:",
+        error
+      );
+    }
+
+    /*
+      ------------------------------------------------------
+      ANDROID CHANNEL
+      ------------------------------------------------------
+    */
+
+    try {
+      await LocalNotifications.createChannel({
+        id: NOTIFICATION_CHANNEL_ID,
+
+        name: "PR Reminder",
+
+        description:
+          "Notifikasi tugas baru dari guru",
+
+        importance: 5,
+
+        visibility: 1,
+
+        sound:
+          "pr_reminder_notification",
+
+        vibration: true,
+
+        lights: true,
+      });
+    } catch (error) {
+      console.warn(
+        "CREATE NOTIFICATION CHANNEL:",
+        error
+      );
+    }
+
+    /*
+      ------------------------------------------------------
+      LISTENER HANYA SEKALI
+      ------------------------------------------------------
+    */
+
+    if (!pushListenersReady) {
+      pushListenersReady = true;
+
+      /*
+        ====================================================
+        FCM REGISTRATION
+        ====================================================
+      */
+
+      await PushNotifications.addListener(
+        "registration",
+        async (token) => {
+          console.log(
+            "FCM TOKEN:",
+            token.value
+          );
+
+          const authToken =
+            localStorage.getItem(
+              "prReminderToken"
+            );
+
+          if (!authToken) {
+            console.warn(
+              "Token login tidak ditemukan."
+            );
+
+            return;
+          }
+
+          try {
+            const response =
+              await fetch(
+                `${API_URL}/api/push/register-token`,
+                {
+                  method: "POST",
+
+                  headers: {
+                    "Content-Type":
+                      "application/json",
+
+                    Authorization:
+                      `Bearer ${authToken}`,
+                  },
+
+                  body: JSON.stringify({
+                    token: token.value,
+
+                    platform: "android",
+                  }),
+                }
+              );
+
+            const data =
+              await response.json();
+
+            console.log(
+              "PUSH TOKEN REGISTER:",
+              data
+            );
+          } catch (error) {
+            console.error(
+              "REGISTER PUSH TOKEN:",
+              error
+            );
+          }
+        }
+      );
+
+      /*
+        ====================================================
+        FCM REGISTRATION ERROR
+        ====================================================
+      */
+
+      await PushNotifications.addListener(
+        "registrationError",
+        (error) => {
+          console.error(
+            "FCM REGISTRATION ERROR:",
+            error
+          );
+        }
+      );
+
+      /*
+        ====================================================
+        PUSH SAAT APP SEDANG TERBUKA
+        ====================================================
+      */
+
+      await PushNotifications.addListener(
+        "pushNotificationReceived",
+        async (notification) => {
+          console.log(
+            "PUSH RECEIVED:",
+            notification
+          );
+
+          try {
+            await LocalNotifications.schedule({
+              notifications: [
+                {
+                  id:
+                    Math.floor(
+                      Date.now() %
+                        2147483647
+                    ),
+
+                  title:
+                    notification.title ||
+                    "Tugas Baru!",
+
+                  body:
+                    notification.body ||
+                    "Ada tugas baru dari guru.",
+
+                  channelId:
+                    NOTIFICATION_CHANNEL_ID,
+
+                  sound:
+                    "pr_reminder_notification",
+
+                  schedule: {
+                    at: new Date(
+                      Date.now() + 500
+                    ),
+                  },
+
+                  extra:
+                    notification.data ||
+                    {},
+                },
+              ],
+            });
+
+            console.log(
+              "LOCAL NOTIFICATION BERHASIL"
+            );
+          } catch (error) {
+            console.error(
+              "LOCAL NOTIFICATION ERROR:",
+              error
+            );
+          }
+        }
+      );
+
+      /*
+        ====================================================
+        SAAT USER MENEKAN NOTIFIKASI
+        ====================================================
+      */
+
+      await PushNotifications.addListener(
+        "pushNotificationActionPerformed",
+        (event) => {
+          console.log(
+            "PUSH ACTION:",
+            event
+          );
+        }
+      );
+    }
+
+    /*
+      ------------------------------------------------------
+      REGISTER FCM
+      ------------------------------------------------------
+    */
+
+    await PushNotifications.register();
+
+    console.log(
+      "FCM REGISTER REQUESTED"
+    );
+  } catch (error) {
+    console.error(
+      "SETUP PUSH ERROR:",
+      error
+    );
+  }
+}
+
+/*
+  ==========================================================
+  APP
+  ==========================================================
+*/
 
 export default function App() {
   const [page, setPage] =
@@ -43,522 +347,67 @@ export default function App() {
     useState(null);
 
   /*
-    Key ini dipakai untuk memaksa
-    dashboard Siswa mengambil ulang
-    daftar tugas ketika push masuk.
+    Memaksa dashboard siswa
+    dimuat ulang setelah push.
   */
+
   const [
     studentRefreshKey,
     setStudentRefreshKey,
   ] = useState(0);
 
+  /*
+    ========================================================
+    INITIAL SESSION
+    ========================================================
+  */
+
   useEffect(() => {
     restoreSession();
   }, []);
 
   /*
     ========================================================
-    PUSH NOTIFICATION ANDROID
+    APP KEMBALI AKTIF
     ========================================================
   */
 
   useEffect(() => {
-    if (
-      Capacitor.getPlatform() !==
-      "android"
-    ) {
-      return undefined;
-    }
-
-    if (
-      !user ||
-      user.role !== "siswa"
-    ) {
-      return undefined;
-    }
-
-    let registrationHandle =
-      null;
-
-    let registrationErrorHandle =
-      null;
-
-    let notificationReceivedHandle =
-      null;
-
-    let notificationActionHandle =
-      null;
-
-    let appStateHandle =
-      null;
-
-    async function registerFcmToken() {
-      try {
-        const authToken =
-          localStorage.getItem(
-            "prReminderToken"
-          );
-
-        if (!authToken) {
-          return;
-        }
-
-        const permission =
-          await PushNotifications.checkPermissions();
-
+    const handleVisibility =
+      async () => {
         if (
-          permission.receive !==
-          "granted"
+          document.visibilityState ===
+            "visible" &&
+          user?.role === "siswa"
         ) {
-          const requested =
-            await PushNotifications.requestPermissions();
-
-          if (
-            requested.receive !==
-            "granted"
-          ) {
-            console.warn(
-              "Izin notifikasi Android ditolak."
-            );
-
-            return;
-          }
-        }
-
-        /*
-          Channel Android untuk heads-up
-          + suara custom.
-        */
-
-        try {
-          await PushNotifications.createChannel(
-            {
-              id: PUSH_CHANNEL_ID,
-
-              name: "PR Reminder",
-
-              description:
-                "Notifikasi tugas baru dari Guru.",
-
-              importance: 5,
-
-              visibility: 1,
-
-              sound:
-                "pr_reminder_notification",
-
-              vibration: true,
-
-              lights: true,
-            }
+          await setupPushNotifications(
+            user
           );
-        } catch (error) {
-          console.warn(
-            "Gagal membuat push channel:",
-            error
+
+          setStudentRefreshKey(
+            (value) => value + 1
           );
         }
-
-        /*
-          Local notification channel.
-          Dipakai ketika app sedang terbuka.
-        */
-
-        try {
-          const localPermission =
-            await LocalNotifications.checkPermissions();
-
-          if (
-            localPermission.display !==
-            "granted"
-          ) {
-            const requestedLocal =
-              await LocalNotifications.requestPermissions();
-
-            if (
-              requestedLocal.display !==
-              "granted"
-            ) {
-              console.warn(
-                "Izin local notification ditolak."
-              );
-            }
-          }
-
-          await LocalNotifications.createChannel(
-            {
-              id: PUSH_CHANNEL_ID,
-
-              name: "PR Reminder",
-
-              description:
-                "Notifikasi tugas baru dari Guru.",
-
-              importance: 5,
-
-              visibility: 1,
-
-              sound:
-                "pr_reminder_notification",
-
-              vibration: true,
-
-              lights: true,
-            }
-          );
-        } catch (error) {
-          console.warn(
-            "Local notification:",
-            error
-          );
-        }
-
-        /*
-          Listener registration harus dipasang
-          sebelum register().
-        */
-
-        registrationHandle =
-          await PushNotifications.addListener(
-            "registration",
-            async (event) => {
-              try {
-                const fcmToken =
-                  String(
-                    event?.value || ""
-                  ).trim();
-
-                if (!fcmToken) {
-                  console.warn(
-                    "FCM token kosong."
-                  );
-
-                  return;
-                }
-
-                console.log(
-                  "FCM TOKEN DITERIMA"
-                );
-
-                const response =
-                  await fetch(
-                    `${API_URL}/api/push/register-token`,
-                    {
-                      method: "POST",
-
-                      headers: {
-                        "Content-Type":
-                          "application/json",
-
-                        Authorization:
-                          `Bearer ${authToken}`,
-                      },
-
-                      body: JSON.stringify(
-                        {
-                          token:
-                            fcmToken,
-
-                          platform:
-                            "android",
-                        }
-                      ),
-                    }
-                  );
-
-                const data =
-                  await response
-                    .json()
-                    .catch(
-                      () => ({})
-                    );
-
-                if (!response.ok) {
-                  throw new Error(
-                    data.message ||
-                      `Gagal menyimpan token (${response.status})`
-                  );
-                }
-
-                console.log(
-                  "FCM TOKEN BERHASIL DISIMPAN"
-                );
-              } catch (error) {
-                console.error(
-                  "REGISTER FCM TOKEN:",
-                  error
-                );
-              }
-            }
-          );
-
-        registrationErrorHandle =
-          await PushNotifications.addListener(
-            "registrationError",
-            (error) => {
-              console.error(
-                "FCM REGISTRATION ERROR:",
-                error
-              );
-            }
-          );
-
-        /*
-          ====================================================
-          FOREGROUND PUSH
-          ====================================================
-        */
-
-        notificationReceivedHandle =
-          await PushNotifications.addListener(
-            "pushNotificationReceived",
-            async (notification) => {
-              try {
-                console.log(
-                  "PUSH DITERIMA DI FOREGROUND:",
-                  notification
-                );
-
-                const data =
-                  notification?.data ||
-                  {};
-
-                const taskId =
-                  data.taskId
-                    ? String(
-                        data.taskId
-                      )
-                    : "";
-
-                if (taskId) {
-                  localStorage.setItem(
-                    "prReminderOpenTaskId",
-                    taskId
-                  );
-                }
-
-                /*
-                  Ini bagian penting:
-                  dashboard Siswa akan dibuat ulang
-                  sehingga /api/tasks dipanggil lagi.
-                */
-
-                setStudentRefreshKey(
-                  (value) =>
-                    value + 1
-                );
-
-                const title =
-                  notification?.title ||
-                  "Tugas Baru!";
-
-                const teacherName =
-                  data.teacherName ||
-                  "Guru";
-
-                const body =
-                  notification?.body ||
-                  `Ada tugas baru dari ${teacherName}.`;
-
-                try {
-                  const localPermission =
-                    await LocalNotifications.checkPermissions();
-
-                  if (
-                    localPermission.display ===
-                    "granted"
-                  ) {
-                    await LocalNotifications.schedule(
-                      {
-                        notifications: [
-                          {
-                            id:
-                              Math.floor(
-                                Date.now() %
-                                  2147483647
-                              ),
-
-                            title,
-
-                            body,
-
-                            channelId:
-                              PUSH_CHANNEL_ID,
-
-                            sound:
-                              "pr_reminder_notification",
-
-                            smallIcon:
-                              "ic_launcher",
-
-                            extra: {
-                              type:
-                                "new_task",
-
-                              taskId,
-
-                              classId:
-                                data.classId ||
-                                "",
-
-                              teacherName:
-                                String(
-                                  teacherName
-                                ),
-                            },
-                          },
-                        ],
-                      }
-                    );
-                  }
-                } catch (error) {
-                  console.error(
-                    "LOCAL NOTIFICATION:",
-                    error
-                  );
-                }
-              } catch (error) {
-                console.error(
-                  "FOREGROUND PUSH:",
-                  error
-                );
-              }
-            }
-          );
-
-        /*
-          ====================================================
-          PUSH DITEKAN
-          ====================================================
-        */
-
-        notificationActionHandle =
-          await PushNotifications.addListener(
-            "pushNotificationActionPerformed",
-            (event) => {
-              try {
-                console.log(
-                  "PUSH DITEKAN:",
-                  event
-                );
-
-                const data =
-                  event?.notification
-                    ?.data ||
-                  {};
-
-                const taskId =
-                  data.taskId
-                    ? String(
-                        data.taskId
-                      )
-                    : "";
-
-                if (taskId) {
-                  localStorage.setItem(
-                    "prReminderOpenTaskId",
-                    taskId
-                  );
-                }
-
-                setStudentRefreshKey(
-                  (value) =>
-                    value + 1
-                );
-
-                setPage(
-                  "siswa"
-                );
-              } catch (error) {
-                console.error(
-                  "PUSH ACTION:",
-                  error
-                );
-              }
-            }
-          );
-
-        /*
-          Register device ke FCM.
-        */
-
-        await PushNotifications.register();
-
-        console.log(
-          "PUSH NOTIFICATION AKTIF"
-        );
-      } catch (error) {
-        console.error(
-          "SETUP PUSH:",
-          error
-        );
-      }
-    }
-
-    /*
-      Saat app aktif kembali dari background,
-      register lagi supaya token tetap tersimpan.
-    */
-
-    async function handleAppResume() {
-      if (
-        document.visibilityState ===
-        "visible"
-      ) {
-        try {
-          await registerFcmToken();
-        } catch (error) {
-          console.error(
-            "PUSH RESUME:",
-            error
-          );
-        }
-      }
-    }
-
-    registerFcmToken();
+      };
 
     document.addEventListener(
       "visibilitychange",
-      handleAppResume
+      handleVisibility
     );
-
-    appStateHandle =
-      handleAppResume;
 
     return () => {
       document.removeEventListener(
         "visibilitychange",
-        appStateHandle
+        handleVisibility
       );
-
-      try {
-        registrationHandle?.remove();
-      } catch {}
-
-      try {
-        registrationErrorHandle?.remove();
-      } catch {}
-
-      try {
-        notificationReceivedHandle?.remove();
-      } catch {}
-
-      try {
-        notificationActionHandle?.remove();
-      } catch {}
     };
   }, [user]);
 
   /*
     ========================================================
-    SESSION
+    RESTORE USER SESSION
     ========================================================
   */
-
-  useEffect(() => {
-    restoreSession();
-  }, []);
 
   async function restoreSession() {
     const path =
@@ -568,10 +417,9 @@ export default function App() {
       OWNER / ADMIN
     */
 
-    if (
-      path === OWNER_PATH
-    ) {
+    if (path === OWNER_PATH) {
       await restoreAdminSession();
+
       return;
     }
 
@@ -589,17 +437,24 @@ export default function App() {
         "prReminderUser"
       );
 
+    /*
+      Tidak ada session.
+    */
+
     if (!token) {
       setPage("home");
+
       return;
     }
+
+    /*
+      Pulihkan user lokal terlebih dahulu.
+    */
 
     if (savedUser) {
       try {
         const parsedUser =
-          JSON.parse(
-            savedUser
-          );
+          JSON.parse(savedUser);
 
         if (
           parsedUser &&
@@ -612,11 +467,17 @@ export default function App() {
             "guru"
           ) {
             setPage("guru");
-          } else if (
+          }
+
+          if (
             parsedUser.role ===
             "siswa"
           ) {
             setPage("siswa");
+
+            setupPushNotifications(
+              parsedUser
+            );
           }
         }
       } catch {
@@ -625,6 +486,10 @@ export default function App() {
         );
       }
     }
+
+    /*
+      Validasi session ke backend production.
+    */
 
     try {
       const response =
@@ -650,25 +515,23 @@ export default function App() {
 
       localStorage.setItem(
         "prReminderUser",
-        JSON.stringify(
-          data.user
-        )
+        JSON.stringify(data.user)
       );
 
-      setUser(
-        data.user
-      );
+      setUser(data.user);
 
       if (
-        data.user.role ===
-        "guru"
+        data.user.role === "guru"
       ) {
         setPage("guru");
       } else if (
-        data.user.role ===
-        "siswa"
+        data.user.role === "siswa"
       ) {
         setPage("siswa");
+
+        await setupPushNotifications(
+          data.user
+        );
       } else {
         clearUserSession();
       }
@@ -682,6 +545,12 @@ export default function App() {
     }
   }
 
+  /*
+    ========================================================
+    RESTORE ADMIN SESSION
+    ========================================================
+  */
+
   async function restoreAdminSession() {
     const token =
       localStorage.getItem(
@@ -690,6 +559,7 @@ export default function App() {
 
     if (!token) {
       setPage("owner-login");
+
       return;
     }
 
@@ -737,6 +607,12 @@ export default function App() {
     }
   }
 
+  /*
+    ========================================================
+    CLEAR USER
+    ========================================================
+  */
+
   function clearUserSession() {
     localStorage.removeItem(
       "prReminderToken"
@@ -746,13 +622,16 @@ export default function App() {
       "prReminderUser"
     );
 
-    localStorage.removeItem(
-      "prReminderOpenTaskId"
-    );
-
     setUser(null);
+
     setPage("home");
   }
+
+  /*
+    ========================================================
+    CLEAR ADMIN
+    ========================================================
+  */
 
   function clearAdminSession() {
     localStorage.removeItem(
@@ -764,35 +643,56 @@ export default function App() {
     );
 
     setAdmin(null);
+
     setPage("owner-login");
   }
 
-  function handleUserLogin(
+  /*
+    ========================================================
+    USER LOGIN
+    ========================================================
+  */
+
+  async function handleUserLogin(
     loggedUser
   ) {
-    setUser(
-      loggedUser
-    );
+    setUser(loggedUser);
 
     if (
       loggedUser.role ===
       "guru"
     ) {
       setPage("guru");
-    } else {
-      setPage("siswa");
+
+      return;
     }
+
+    setPage("siswa");
+
+    await setupPushNotifications(
+      loggedUser
+    );
   }
+
+  /*
+    ========================================================
+    ADMIN LOGIN
+    ========================================================
+  */
 
   function handleAdminLogin(
     loggedAdmin
   ) {
-    setAdmin(
-      loggedAdmin
-    );
+    setAdmin(loggedAdmin);
 
     setPage("admin");
   }
+
+  /*
+    ========================================================
+    LOGOUT
+    ========================================================
+  */
 
   function handleLogout() {
     clearUserSession();
@@ -808,13 +708,23 @@ export default function App() {
     );
   }
 
+  /*
+    ========================================================
+    HOME
+    ========================================================
+  */
+
   function goHome() {
     setPage("home");
   }
 
-  if (
-    page === "loading"
-  ) {
+  /*
+    ========================================================
+    LOADING
+    ========================================================
+  */
+
+  if (page === "loading") {
     return (
       <div className="app-loading">
         <div className="brand-mark">
@@ -836,49 +746,55 @@ export default function App() {
     );
   }
 
-  if (
-    page === "home"
-  ) {
+  /*
+    ========================================================
+    HOME
+    ========================================================
+  */
+
+  if (page === "home") {
     return (
       <Home
         onLogin={() =>
           setPage("login")
         }
         onRegister={() =>
-          setPage(
-            "register"
-          )
+          setPage("register")
         }
       />
     );
   }
 
-  if (
-    page === "login"
-  ) {
+  /*
+    ========================================================
+    LOGIN
+    ========================================================
+  */
+
+  if (page === "login") {
     return (
       <Login
         onLogin={
           handleUserLogin
         }
         onRegister={() =>
-          setPage(
-            "register"
-          )
+          setPage("register")
         }
         onGuruLogin={() =>
-          setPage(
-            "guru-login"
-          )
+          setPage("guru-login")
         }
         onBack={goHome}
       />
     );
   }
 
-  if (
-    page === "register"
-  ) {
+  /*
+    ========================================================
+    REGISTER
+    ========================================================
+  */
+
+  if (page === "register") {
     return (
       <Register
         onRegistered={
@@ -891,9 +807,13 @@ export default function App() {
     );
   }
 
-  if (
-    page === "guru-login"
-  ) {
+  /*
+    ========================================================
+    GURU LOGIN
+    ========================================================
+  */
+
+  if (page === "guru-login") {
     return (
       <Guru
         loginOnly
@@ -907,38 +827,44 @@ export default function App() {
     );
   }
 
-  if (
-    page === "guru"
-  ) {
+  /*
+    ========================================================
+    GURU
+    ========================================================
+  */
+
+  if (page === "guru") {
     return (
       <Guru
         user={user}
-        onLogout={
-          handleLogout
-        }
+        onLogout={handleLogout}
       />
     );
   }
 
-  if (
-    page === "siswa"
-  ) {
+  /*
+    ========================================================
+    SISWA
+    ========================================================
+  */
+
+  if (page === "siswa") {
     return (
       <Siswa
-        key={
-          `siswa-${studentRefreshKey}`
-        }
+        key={`siswa-${studentRefreshKey}`}
         user={user}
-        onLogout={
-          handleLogout
-        }
+        onLogout={handleLogout}
       />
     );
   }
 
-  if (
-    page === "owner-login"
-  ) {
+  /*
+    ========================================================
+    OWNER LOGIN
+    ========================================================
+  */
+
+  if (page === "owner-login") {
     return (
       <OwnerLogin
         onLogin={
@@ -948,9 +874,13 @@ export default function App() {
     );
   }
 
-  if (
-    page === "admin"
-  ) {
+  /*
+    ========================================================
+    ADMIN
+    ========================================================
+  */
+
+  if (page === "admin") {
     return (
       <Admin
         admin={admin}
@@ -963,6 +893,12 @@ export default function App() {
 
   return null;
 }
+
+/*
+  ==========================================================
+  HOME COMPONENT
+  ==========================================================
+*/
 
 function Home({
   onLogin,
