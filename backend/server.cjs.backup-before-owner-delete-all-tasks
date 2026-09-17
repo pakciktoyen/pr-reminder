@@ -1,4 +1,4 @@
-require("dotenv").config();
+﻿require("dotenv").config();
 
 const express = require("express");
 const cors = require("cors");
@@ -2192,50 +2192,6 @@ app.get(
       res.status(500).json({
         message:
           "Gagal mengambil daftar tugas.",
-      });
-    }
-  }
-);
-
-/* =========================================================
-   DELETE ALL ADMIN TASKS
-   OWNER / ADMIN ONLY
-   MENGHAPUS SEMUA TUGAS DARI SELURUH KELAS
-========================================================= */
-
-app.delete(
-  "/api/admin/tasks",
-  authenticateAdmin,
-  async (req, res) => {
-    try {
-      const result = await pool.query(`
-        DELETE FROM public.tasks
-        RETURNING id
-      `);
-
-      const deletedCount = result.rowCount || 0;
-
-      console.log(
-        `Admin deleted all tasks: count=${deletedCount}, admin=${req.admin.id}`
-      );
-
-      return res.json({
-        success: true,
-        deletedCount,
-        message:
-          deletedCount > 0
-            ? `${deletedCount} tugas berhasil dihapus dari seluruh kelas.`
-            : "Tidak ada tugas yang perlu dihapus.",
-      });
-    } catch (error) {
-      console.error(
-        "DELETE /api/admin/tasks:",
-        error
-      );
-
-      return res.status(500).json({
-        success: false,
-        message: "Gagal menghapus semua tugas.",
       });
     }
   }

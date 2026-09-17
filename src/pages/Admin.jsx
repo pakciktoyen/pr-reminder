@@ -116,6 +116,12 @@ export default function Admin({ onLogout }) {
 
   const [readUpdatingId, setReadUpdatingId] = useState(null);
 
+  const [deletingAllTasks, setDeletingAllTasks] =
+    useState(false);
+
+  const [showDeleteTasksModal, setShowDeleteTasksModal] =
+    useState(false);
+
   const accountRows = useMemo(() => users, [users]);
 
   async function apiFetch(path, options = {}) {
@@ -344,6 +350,36 @@ export default function Admin({ onLogout }) {
       );
     } finally {
       setSavingTeacher(false);
+    }
+  }
+
+  async function handleDeleteAllTasks() {
+    if (deletingAllTasks) return;
+
+    setDeletingAllTasks(true);
+    setError("");
+    setMessage("");
+
+    try {
+      const data = await apiFetch("/api/admin/tasks", {
+        method: "DELETE",
+      });
+
+      setTasks([]);
+      setShowDeleteTasksModal(false);
+
+      setMessage(
+        data.message ||
+          `${Number(data.deletedCount || 0)} tugas berhasil dihapus.`
+      );
+
+      await loadDashboard();
+    } catch (err) {
+      setError(
+        err.message || "Gagal menghapus semua tugas."
+      );
+    } finally {
+      setDeletingAllTasks(false);
     }
   }
 
@@ -707,6 +743,20 @@ export default function Admin({ onLogout }) {
                       Daftar tugas yang dibuat Guru.
                     </p>
                   </div>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setShowDeleteTasksModal(true)
+                    }
+                    disabled={
+                      deletingAllTasks ||
+                      tasks.length === 0
+                    }
+                    style={styles.dangerButton}
+                  >
+                    Hapus Semua Tugas
+                  </button>
                 </div>
 
                 {tasks.length === 0 ? (
@@ -799,7 +849,7 @@ export default function Admin({ onLogout }) {
                                 <span
                                   style={
                                     completed >=
-                                    total &&
+                                      total &&
                                     total > 0
                                       ? styles.badgeGreen
                                       : styles.badgeOrange
@@ -1123,6 +1173,77 @@ export default function Admin({ onLogout }) {
           ♥ Made by Rayva
         </footer>
       </main>
+
+      {showDeleteTasksModal && (
+        <div style={styles.overlay}>
+          <div style={styles.modal}>
+            <div style={styles.modalHeader}>
+              <div>
+                <div
+                  style={{
+                    ...styles.modalEyebrow,
+                    color: "#dc2626",
+                  }}
+                >
+                  AREA BERBAHAYA
+                </div>
+
+                <h2 style={styles.modalTitle}>
+                  Hapus Semua Tugas
+                </h2>
+              </div>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setShowDeleteTasksModal(false)
+                }
+                disabled={deletingAllTasks}
+                style={styles.closeButton}
+              >
+                ×
+              </button>
+            </div>
+
+            <div style={styles.deleteWarning}>
+              <strong>
+                {tasks.length} tugas
+              </strong>{" "}
+              akan dihapus permanen dari seluruh kelas
+              <strong> 7A sampai 9D</strong>.
+              <br />
+              <br />
+              Data progres penyelesaian tugas juga akan
+              ikut terhapus. Akun Guru, akun Siswa, dan
+              daftar kelas tidak ikut terhapus.
+            </div>
+
+            <div style={styles.modalActions}>
+              <button
+                type="button"
+                onClick={() =>
+                  setShowDeleteTasksModal(false)
+                }
+                disabled={deletingAllTasks}
+                style={styles.ghostButton}
+              >
+                Batal
+              </button>
+
+              <button
+                type="button"
+                onClick={handleDeleteAllTasks}
+                disabled={deletingAllTasks}
+                style={styles.dangerButton}
+              >
+                {deletingAllTasks
+                  ? "Menghapus..."
+                  : "Ya, Hapus Semua"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showTeacherModal && (
         <div style={styles.overlay}>
@@ -1587,6 +1708,17 @@ const styles = {
     cursor: "pointer",
   },
 
+  dangerButton: {
+    border: "1px solid #dc2626",
+    background: "#dc2626",
+    color: "#fff",
+    borderRadius: 9,
+    padding: "10px 14px",
+    fontWeight: 800,
+    cursor: "pointer",
+    whiteSpace: "nowrap",
+  },
+
   secondaryButton: {
     border: "1px solid #cfd7e6",
     background: "#fff",
@@ -1916,6 +2048,16 @@ const styles = {
   modalTitle: {
     margin: "5px 0 0",
     fontSize: 22,
+  },
+
+  deleteWarning: {
+    border: "1px solid #fecaca",
+    background: "#fff5f5",
+    color: "#991b1b",
+    borderRadius: 11,
+    padding: 14,
+    lineHeight: 1.55,
+    fontSize: 13,
   },
 
   closeButton: {

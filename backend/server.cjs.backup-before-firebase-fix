@@ -45,7 +45,7 @@ const firebaseConfigured = Boolean(
   FIREBASE_PRIVATE_KEY
 );
 
-if (firebaseConfigured && admin.getApps().length === 0) {
+if (firebaseConfigured && !admin.apps.length) {
   try {
     admin.initializeApp({
       credential: admin.credential.cert({
@@ -181,7 +181,7 @@ function normalizeFeedbackType(value) {
 ========================================================= */
 
 async function sendNewTaskNotification({ task, teacherName }) {
-  if (!firebaseConfigured || !admin.getApps().length) {
+  if (!firebaseConfigured || !admin.apps.length) {
     return {
       sent: 0,
       skipped: true,
@@ -2198,50 +2198,6 @@ app.get(
 );
 
 /* =========================================================
-   DELETE ALL ADMIN TASKS
-   OWNER / ADMIN ONLY
-   MENGHAPUS SEMUA TUGAS DARI SELURUH KELAS
-========================================================= */
-
-app.delete(
-  "/api/admin/tasks",
-  authenticateAdmin,
-  async (req, res) => {
-    try {
-      const result = await pool.query(`
-        DELETE FROM public.tasks
-        RETURNING id
-      `);
-
-      const deletedCount = result.rowCount || 0;
-
-      console.log(
-        `Admin deleted all tasks: count=${deletedCount}, admin=${req.admin.id}`
-      );
-
-      return res.json({
-        success: true,
-        deletedCount,
-        message:
-          deletedCount > 0
-            ? `${deletedCount} tugas berhasil dihapus dari seluruh kelas.`
-            : "Tidak ada tugas yang perlu dihapus.",
-      });
-    } catch (error) {
-      console.error(
-        "DELETE /api/admin/tasks:",
-        error
-      );
-
-      return res.status(500).json({
-        success: false,
-        message: "Gagal menghapus semua tugas.",
-      });
-    }
-  }
-);
-
-/* =========================================================
    ADMIN CLASSES
 ========================================================= */
 
@@ -2692,4 +2648,3 @@ if (require.main === module) {
 }
 
 module.exports = app;
-
