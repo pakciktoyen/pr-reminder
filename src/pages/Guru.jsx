@@ -245,6 +245,8 @@ function GuruDashboard({ user, onLogout }) {
   const [showFeedback, setShowFeedback] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deletingTaskId, setDeletingTaskId] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteError, setDeleteError] = useState("");
   const [form, setForm] = useState(EMPTY_FORM);
 
   const token = localStorage.getItem("prReminderToken");
@@ -337,6 +339,64 @@ function GuruDashboard({ user, onLogout }) {
     }
   }
 
+  async function deleteTask(taskId) {
+    if (!token || deletingTaskId !== null) {
+      return;
+    }
+
+    setDeleteError("");
+    setDeletingTaskId(taskId);
+
+    try {
+      const response = await fetch(
+        `${API_URL}/api/tasks/${taskId}`,
+        {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      let data = {};
+
+      try {
+        data = await response.json();
+      } catch {
+        data = {};
+      }
+
+      if (!response.ok) {
+        throw new Error(
+          data.message || "Gagal menghapus tugas."
+        );
+      }
+
+      setTasks((current) =>
+        current.filter(
+          (item) => Number(item.id) !== Number(taskId)
+        )
+      );
+
+      if (
+        selectedTask &&
+        Number(selectedTask.id) === Number(taskId)
+      ) {
+        setSelectedTask(null);
+      }
+
+      setDeleteTarget(null);
+      setDeleteError("");
+    } catch (error) {
+      console.error("DELETE TASK:", error);
+      setDeleteError(
+        error.message || "Gagal menghapus tugas."
+      );
+    } finally {
+      setDeletingTaskId(null);
+    }
+  }
+
   async function createTask(event) {
     event.preventDefault();
 
@@ -403,68 +463,6 @@ function GuruDashboard({ user, onLogout }) {
       console.error("CREATE TASK:", error);
     } finally {
       setSaving(false);
-    }
-  }
-
-  async function deleteTask(taskId, taskTitle) {
-    if (!token) {
-      return;
-    }
-
-    const confirmed = window.confirm(
-      `Hapus tugas "${taskTitle || "ini"}"?\n\nTugas yang dihapus tidak dapat dikembalikan.`
-    );
-
-    if (!confirmed) {
-      return;
-    }
-
-    setDeletingTaskId(taskId);
-
-    try {
-      const response = await fetch(
-        `${API_URL}/api/tasks/${taskId}`,
-        {
-          method: "DELETE",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
-
-      let data = {};
-
-      try {
-        data = await response.json();
-      } catch {
-        data = {};
-      }
-
-      if (!response.ok) {
-        throw new Error(
-          data.message || "Gagal menghapus tugas."
-        );
-      }
-
-      setTasks((currentTasks) =>
-        currentTasks.filter(
-          (task) => Number(task.id) !== Number(taskId)
-        )
-      );
-
-      setSelectedTask((currentTask) =>
-        currentTask &&
-        Number(currentTask.id) === Number(taskId)
-          ? null
-          : currentTask
-      );
-    } catch (error) {
-      console.error("DELETE TASK:", error);
-      window.alert(
-        error.message || "Gagal menghapus tugas."
-      );
-    } finally {
-      setDeletingTaskId(null);
     }
   }
 
@@ -623,8 +621,14 @@ function GuruDashboard({ user, onLogout }) {
                       onClick={() =>
                         setSelectedTask(task)
                       }
-                      onDelete={deleteTask}
-                      deletingTaskId={deletingTaskId}
+                      onDelete={() => {
+                        setDeleteError("");
+                        setDeleteTarget(task);
+                      }}
+                      deleting={
+                        Number(deletingTaskId) ===
+                        Number(task.id)
+                      }
                     />
                   ))}
               </div>
@@ -669,8 +673,14 @@ function GuruDashboard({ user, onLogout }) {
                     onClick={() =>
                       setSelectedTask(task)
                     }
-                      onDelete={deleteTask}
-                      deletingTaskId={deletingTaskId}
+                    onDelete={() => {
+                      setDeleteError("");
+                      setDeleteTarget(task);
+                    }}
+                    deleting={
+                      Number(deletingTaskId) ===
+                      Number(task.id)
+                    }
                   />
                 ))}
               </div>
@@ -811,6 +821,28 @@ function GuruDashboard({ user, onLogout }) {
           task={selectedTask}
           onClose={() =>
             setSelectedTask(null)
+          }
+        />
+      ) : null}
+
+      {/* DELETE TASK */}
+
+      {deleteTarget ? (
+        <DeleteTaskModal
+          task={deleteTarget}
+          deleting={deletingTaskId !== null}
+          error={deleteError}
+          onClose={() => {
+            if (deletingTaskId === null) {
+              setDeleteTarget(null);
+              setDeleteError("");
+            }
+          }}
+          onConfirm={() =>
+            deleteTask(
+              deleteTarget.id,
+              deleteTarget.title
+            )
           }
         />
       ) : null}
@@ -1541,6 +1573,80 @@ function SectionHeader({
 }
 
 /* =========================================================
+   DELETE TASK MODAL
+========================================================= */
+
+function DeleteTaskModal({
+  task,
+  deleting,
+  error,
+  onClose,
+  onConfirm,
+}) {
+  return (
+    <div
+      style={dashboardStyles.deleteOverlay}
+      onClick={() => {
+        if (!deleting) {
+          onClose();
+        }
+      }}
+    >
+      <div
+        style={dashboardStyles.deleteModal}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div style={dashboardStyles.deleteIcon}>
+          !
+        </div>
+
+        <small style={dashboardStyles.deleteEyebrow}>
+          PR REMINDER
+        </small>
+
+        <h2 style={dashboardStyles.deleteTitle}>
+          Hapus Tugas?
+        </h2>
+
+        <p style={dashboardStyles.deleteText}>
+          Tugas {""}
+          <strong style={dashboardStyles.deleteTaskName}>
+            {task?.title || "ini"}
+          </strong>
+          {" "}akan dihapus secara permanen.
+        </p>
+
+        {error ? (
+          <div style={dashboardStyles.deleteError}>
+            {error}
+          </div>
+        ) : null}
+
+        <div style={dashboardStyles.deleteActions}>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={deleting}
+            style={dashboardStyles.deleteCancel}
+          >
+            Batal
+          </button>
+
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={deleting}
+            style={dashboardStyles.deleteConfirm}
+          >
+            {deleting ? "Menghapus..." : "Hapus Tugas"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* =========================================================
    TASK CARD
 ========================================================= */
 
@@ -1548,57 +1654,60 @@ function TeacherTaskCard({
   task,
   onClick,
   onDelete,
-  deletingTaskId,
+  deleting = false,
 }) {
-  const isDeleting =
-    Number(deletingTaskId) === Number(task.id);
-
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={onClick}
-      onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          onClick();
-        }
-      }}
-      style={{
-        ...dashboardStyles.taskCard,
-        cursor: isDeleting ? "default" : "pointer",
-        opacity: isDeleting ? 0.65 : 1,
-      }}
-    >
+    <div style={dashboardStyles.taskCard}>
+      <button
+        type="button"
+        onClick={onClick}
+        style={dashboardStyles.taskCardMain}
+      >
       <div style={dashboardStyles.taskIcon}>
         T
       </div>
 
       <div style={dashboardStyles.taskBody}>
-        <div style={dashboardStyles.taskTop}>
-          <span style={dashboardStyles.subject}>
+        <div
+          style={dashboardStyles.taskTop}
+        >
+          <span
+            style={dashboardStyles.subject}
+          >
             {task.subject}
           </span>
 
-          <span style={dashboardStyles.taskClass}>
+          <span
+            style={dashboardStyles.taskClass}
+          >
             {task.className ||
               task.classId ||
               "-"}
           </span>
         </div>
 
-        <h3 style={dashboardStyles.taskTitle}>
+        <h3
+          style={dashboardStyles.taskTitle}
+        >
           {task.title}
         </h3>
 
-        <p style={dashboardStyles.taskDescription}>
+        <p
+          style={
+            dashboardStyles.taskDescription
+          }
+        >
           {task.description}
         </p>
 
-        <div style={dashboardStyles.taskMeta}>
+        <div
+          style={dashboardStyles.taskMeta}
+        >
           <span>
             Deadline:{" "}
-            {formatDateTime(task.deadline)}
+            {formatDateTime(
+              task.deadline
+            )}
           </span>
 
           <span>
@@ -1609,51 +1718,32 @@ function TeacherTaskCard({
         </div>
       </div>
 
-      <div
-        style={{
-          alignSelf: "center",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          gap: 7,
-        }}
-      >
         <span
-          aria-hidden="true"
           style={dashboardStyles.taskArrow}
         >
           &gt;
         </span>
+      </button>
 
-        <button
-          type="button"
-          disabled={isDeleting}
-          aria-label={
-            isDeleting
-              ? "Menghapus tugas"
-              : `Hapus tugas ${task.title || ""}`
+      <button
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation();
+          if (!deleting) {
+            onDelete();
           }
-          onClick={(event) => {
-            event.stopPropagation();
-            onDelete(task.id, task.title);
-          }}
-          style={{
-            border: "1px solid #f0caca",
-            background: "#fff7f7",
-            color: "#c44747",
-            borderRadius: 8,
-            padding: "5px 7px",
-            fontSize: 10,
-            fontWeight: 900,
-            cursor: isDeleting
-              ? "not-allowed"
-              : "pointer",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {isDeleting ? "Menghapus..." : "Hapus"}
-        </button>
-      </div>
+        }}
+        disabled={deleting}
+        aria-label="Hapus tugas"
+        style={{
+          ...dashboardStyles.taskDeleteButton,
+          ...(deleting
+            ? dashboardStyles.taskDeleteButtonDisabled
+            : null),
+        }}
+      >
+        {deleting ? "…" : "×"}
+      </button>
     </div>
   );
 }
@@ -2237,12 +2327,25 @@ const dashboardStyles = {
     gap: 11,
   },
 
+  taskCardMain: {
+    minWidth: 0,
+    width: "100%",
+    display: "grid",
+    gridTemplateColumns: "42px minmax(0,1fr) 12px",
+    gap: 12,
+    padding: 0,
+    border: "none",
+    background: "transparent",
+    color: "inherit",
+    textAlign: "left",
+  },
+
   taskCard: {
     width: "100%",
     minWidth: 0,
     display: "grid",
     gridTemplateColumns:
-      "42px minmax(0,1fr) auto",
+      "minmax(0,1fr) 36px",
     gap: 12,
     padding: 14,
     boxSizing: "border-box",
@@ -2253,6 +2356,134 @@ const dashboardStyles = {
     color: "#173d68",
     WebkitTapHighlightColor:
       "transparent",
+  },
+
+  taskDeleteButton: {
+    width: 32,
+    height: 32,
+    alignSelf: "center",
+    justifySelf: "center",
+    display: "grid",
+    placeItems: "center",
+    border: "1px solid #ffd6da",
+    borderRadius: 10,
+    background: "#fff5f6",
+    color: "#dc5059",
+    fontSize: 20,
+    fontWeight: 700,
+    lineHeight: 1,
+  },
+
+  taskDeleteButtonDisabled: {
+    opacity: 0.55,
+  },
+
+  deleteOverlay: {
+    position: "fixed",
+    inset: 0,
+    zIndex: 260,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 18,
+    boxSizing: "border-box",
+    background: "rgba(15,43,68,.58)",
+    backdropFilter: "blur(5px)",
+    WebkitBackdropFilter: "blur(5px)",
+  },
+
+  deleteModal: {
+    width: "100%",
+    maxWidth: 390,
+    padding: "25px 20px 19px",
+    boxSizing: "border-box",
+    border: "1px solid #dceaf5",
+    borderRadius: 24,
+    background: "linear-gradient(180deg,#ffffff,#f8fbff)",
+    boxShadow: "0 24px 70px rgba(23,61,104,.24)",
+    textAlign: "center",
+  },
+
+  deleteIcon: {
+    width: 58,
+    height: 58,
+    margin: "0 auto 13px",
+    display: "grid",
+    placeItems: "center",
+    borderRadius: 18,
+    background: "#fff0f2",
+    border: "1px solid #ffd7dc",
+    color: "#d94e59",
+    fontSize: 25,
+    fontWeight: 900,
+  },
+
+  deleteEyebrow: {
+    color: "#3d70df",
+    fontSize: 9,
+    fontWeight: 900,
+    letterSpacing: 1.2,
+    lineHeight: 1.4,
+  },
+
+  deleteTitle: {
+    margin: "6px 0 7px",
+    color: "#173d68",
+    fontSize: 20,
+    fontWeight: 900,
+    lineHeight: 1.3,
+  },
+
+  deleteText: {
+    margin: 0,
+    color: "#71869a",
+    fontSize: 11,
+    lineHeight: 1.6,
+    overflowWrap: "anywhere",
+  },
+
+  deleteTaskName: {
+    color: "#315f96",
+    fontWeight: 900,
+  },
+
+  deleteError: {
+    marginTop: 13,
+    padding: "9px 10px",
+    borderRadius: 10,
+    background: "#fff1f2",
+    color: "#c74750",
+    fontSize: 10,
+    fontWeight: 800,
+    lineHeight: 1.45,
+  },
+
+  deleteActions: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1.35fr",
+    gap: 8,
+    marginTop: 20,
+  },
+
+  deleteCancel: {
+    minHeight: 44,
+    border: "1px solid #d8e5ef",
+    borderRadius: 11,
+    background: "#fff",
+    color: "#637a8f",
+    fontSize: 11,
+    fontWeight: 800,
+  },
+
+  deleteConfirm: {
+    minHeight: 44,
+    border: "none",
+    borderRadius: 11,
+    background: "linear-gradient(135deg,#df5b64,#d94752)",
+    color: "#fff",
+    fontSize: 11,
+    fontWeight: 900,
+    boxShadow: "0 8px 18px rgba(217,71,82,.18)",
   },
 
   taskIcon: {
